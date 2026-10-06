@@ -43,7 +43,7 @@ def main():
                 "link", name="Day Closing for Fee", exact=True
             )
             closing_link.first.wait_for(state="attached")
-            closing_link.first.click()
+            closing_link.locator("visible=true").first.click()
 
             expect(
                 page.get_by_text(
