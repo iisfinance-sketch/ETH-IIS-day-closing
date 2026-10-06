@@ -41,9 +41,10 @@ def main():
             # The dashboard contains several copies of this link.
             closing_link = page.get_by_role(
                 "link", name="Day Closing for Fee", exact=True
-            )
-            closing_link.first.wait_for(state="attached")
-            closing_link.locator("visible=true").first.click()
+            ).and_(page.locator("a:visible"))
+            
+            closing_link.first.click(timeout=60000)
+            print("Day Closing link clicked.", flush=True)
 
             expect(
                 page.get_by_text(
