@@ -19,7 +19,8 @@ def main():
     password = os.environ.get("IIS_PASSWORD")
 
     if not username or not password:
-        raise RuntimeError("Missing IIS login secrets.")
+        log("ERROR: Missing IIS_USERNAME or IIS_PASSWORD secret.")
+        return 1
 
     stage = "starting browser"
     closing_started = False
@@ -33,15 +34,18 @@ def main():
 
         try:
             stage = "opening login page"
-            log(stage)
+            log("Opening IIS login page...")
+
             page.goto(
                 f"{ORIGIN}/IISAUH/",
                 wait_until="domcontentloaded",
             )
 
             stage = "logging in"
+
             page.locator('input[name="loginid"]').fill(username)
             page.locator('input[name="password"]').fill(password)
+
             page.get_by_role(
                 "button", name="Sign In", exact=True
             ).click()
@@ -50,35 +54,49 @@ def main():
                 "**/jsp_dashboard/UserDashboard.jsp*",
                 timeout=60000,
             )
+
             expect(
                 page.get_by_text(
                     "International Indian School", exact=True
                 )
             ).to_be_visible()
+
             log("Login verified.")
 
             stage = "finding Day Closing link"
+
             link = page.locator(
                 'a[href*="DayClosingForFeeParam.jsp"]'
             ).first
 
-            # Reading the link works even when its menu is collapsed.
             link.wait_for(state="attached")
             href = link.get_attribute("href")
 
             if not href:
-                raise RuntimeError("Day Closing link has no address.")
+                raise RuntimeError(
+                    "Day Closing link has no address."
+                )
 
             closing_url = urljoin(page.url, href)
+            destination = urlparse(closing_url)
+
+            # HTTPS links with or without :443 are valid.
             if (
-                urlparse(closing_url).scheme != "https"
-                or urlparse(closing_url).netloc
-                != urlparse(ORIGIN).netloc
+                destination.scheme != "https"
+                or destination.hostname
+                != urlparse(ORIGIN).hostname
+                or destination.port not in (None, 443)
+                or destination.username is not None
+                or destination.password is not None
             ):
-                raise RuntimeError("Unexpected Day Closing destination.")
+                raise RuntimeError(
+                    "Unexpected Day Closing destination."
+                )
+
+            log("Day Closing link found.")
 
             stage = "performing Day Closing"
-            log("Day Closing link found. Starting closing.")
+            log("Starting Day Closing for Fee...")
             closing_started = True
 
             page.goto(
@@ -88,13 +106,16 @@ def main():
             )
 
             stage = "verifying Day Closing result"
+
             expect(
                 page.get_by_text(
-                    "Day Closing Done Successfully", exact=True
+                    "Day Closing Done Successfully",
+                    exact=True,
                 )
             ).to_be_visible(timeout=120000)
 
             closing_confirmed = True
+
             completed_at = datetime.now(
                 ZoneInfo("Asia/Dubai")
             ).strftime("%d-%m-%Y %H:%M:%S")
@@ -105,11 +126,13 @@ def main():
             )
 
             stage = "returning to Financial Accounting"
+
             accounting = page.get_by_text(
                 "Financial Accounting", exact=True
             ).and_(page.locator(":visible"))
 
             accounting.first.click()
+
             expect(
                 page.get_by_role(
                     "heading",
@@ -119,6 +142,7 @@ def main():
             ).to_be_visible()
 
             log("Returned to Financial Accounting.")
+            return 0
 
         except Exception as error:
             log(
@@ -128,8 +152,8 @@ def main():
 
             if closing_confirmed:
                 log(
-                    "Day closing SUCCEEDED, but returning to "
-                    "Financial Accounting failed."
+                    "Day closing SUCCEEDED, but returning "
+                    "to Financial Accounting failed."
                 )
             elif closing_started:
                 log(
@@ -139,7 +163,7 @@ def main():
             else:
                 log("Day closing was NOT requested.")
 
-            raise
+            return 1
 
         finally:
             context.close()
@@ -147,7 +171,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception:
-        sys.exit(1)
+    sys.exit(main())
